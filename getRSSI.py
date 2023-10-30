@@ -4,15 +4,15 @@ import json
 
 #label = location
 label = input("Enter location: ")
-file_idx = 0
+num_attempts = 10
 
 # Open serial port /dev/ttyUSB0 baudrate=115200
 ser = serial.Serial('/dev/ttyUSB0', 115200)
 
 #Keep reading from serial port
 global message
-flag = 1
-while(flag):
+i=0
+while(i<num_attempts):
     line = ser.readline()
     line = line.decode().strip()
     if line ==  'start':
@@ -24,15 +24,14 @@ while(flag):
                 #the file name will be checked if file_name+idx.json exists and add 1 if it does
                 while True:
                     try:
-                        with open(f"{label}_{file_idx}.json") as f:
-                            file_idx += 1
+                        with open(f"data/{label}_{i}.json") as f:
+                            i += 1
                     except FileNotFoundError:
                         break
-                with open(f"{label}_{file_idx}.json",'w') as f:
+                with open(f"data/{label}_{i}.json",'w') as f:
                     data = message[:-1].split(';')
                     json.dump(data, f)
                 print("End of data")
-                flag -= 1
                 break
             else:
                 if(line != ''):

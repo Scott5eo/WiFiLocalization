@@ -29,5 +29,5 @@ void loop()
     Serial.println("end\n\r");
     // Delete the scan result to free memory for code below.
     WiFi.scanDelete();
-    delay(5000);
+    delay(100);
 }
