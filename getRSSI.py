@@ -1,10 +1,10 @@
-#import pyserial
 import serial
 import json
+import os
 
 #label = location
 label = input("Enter location: ")
-num_attempts = 10
+num_attempts = 20
 
 # Open serial port /dev/ttyUSB0 baudrate=115200. In windows, use COM ports
 ser = serial.Serial('/dev/ttyUSB0', 115200)

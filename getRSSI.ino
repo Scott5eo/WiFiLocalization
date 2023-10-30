@@ -22,7 +22,7 @@ void loop()
         Serial.println("start");
         for (int i = 0; i < n; ++i) {
             // Print SSID and RSSI for each network found
-            Serial.printf("{\"MAC\":\"%s\",\"RSSI\":%d};\n", WiFi.BSSIDstr(i).c_str(), WiFi.RSSI(i));
+            Serial.printf("{\"MAC\":%s,\"RSSI\":%d};\n", WiFi.BSSIDstr(i).c_str(), WiFi.RSSI(i));
             delay(10);
         }
     }
