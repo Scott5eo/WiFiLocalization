@@ -6,8 +6,14 @@ import json
 label = input("Enter location: ")
 num_attempts = 10
 
-# Open serial port /dev/ttyUSB0 baudrate=115200
+# Open serial port /dev/ttyUSB0 baudrate=115200. In windows, use COM ports
 ser = serial.Serial('/dev/ttyUSB0', 115200)
+
+#if 'data' folder doesn't exist, create it
+try:
+    os.mkdir('data')
+except FileExistsError:
+    pass
 
 #Keep reading from serial port
 global message
