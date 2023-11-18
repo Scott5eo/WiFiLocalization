@@ -15,6 +15,8 @@ try:
 except FileExistsError:
     pass
 
+#
+
 #Keep reading from serial port
 global message
 i=0
@@ -44,4 +46,6 @@ while(i<num_attempts):
                     message = line
     else:
         print(line)
+
+
 print("Done!")
