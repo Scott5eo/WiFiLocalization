@@ -1,78 +1,103 @@
-#include "freertos/FreeRTOS.h"
+#include "WiFi.h"
 
-#include "esp_wifi.h"
-#include "esp_system.h"
-#include "esp_event.h"
-#include "nvs_flash.h"
+extern "C"{
+    #include "esp_wifi.h"
+    esp_err_t esp_wifi_set_channel(uint8_t primary, wifi_second_chan_t second);
+    esp_err_t esp_wifi_80211_tx(wifi_interface_t ifx, const void *buffer, int len, bool en_sys_seq);
+    esp_err_t esp_wifi_set_max_tx_power(int8_t power);
+}
 
-String input;
+//run time variables
+char emptySSID[32];
+const uint8_t ssid_len = 32;
+uint8_t mac[6];
+uint8_t channel = 1;
+uint32_t packetSize = 0;
+uint32_t packetCount = 0;
+uint32_t currentTime = 0;
+uint32_t attackTime = 0;
 String macs[30];
 int txs[30];
-int i;
-esp_err_t rsp;
+int i = 0;
 
-const char ssid[32] = "";
-const char password[32] = "brobro";
-const uint8_t ssid_length = strlen(ssid);
+// beacon frame definition
+uint8_t beaconPacket[109] = {
+  /*  0 - 3  */ 0x80, 0x00, 0x00, 0x00, // Type/Subtype: managment beacon frame
+  /*  4 - 9  */ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination: broadcast
+  /* 10 - 15 */ 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // Source Address
+  /* 16 - 21 */ 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // BSS ID
+  /* 22 - 23 */ 0x00, 0x00, // sequence control
+
+  //Frame body
+  /* 24 - 31 */ 0x83, 0x51, 0xf7, 0x8f, 0x0f, 0x00, 0x00, 0x00, // Timestamp
+  /* 32 - 33 */ 0x64, 0x00, // Interval: 0x64, 0x00 => every 100ms - 0xe8, 0x03 => every 1s
+  /* 34 - 35 */ 0x31, 0x00, // capabilities Information
+
+  // SSID parameters
+  /* 36 - 37 */ 0x00, 0x20, // Tag: Set SSID length, Tag length: 32
+  /* 38 - 69 */ 0x20, 0x20, 0x20, 0x20,
+                0x20, 0x20, 0x20, 0x20,
+                0x20, 0x20, 0x20, 0x20,
+                0x20, 0x20, 0x20, 0x20,
+                0x20, 0x20, 0x20, 0x20,
+                0x20, 0x20, 0x20, 0x20,
+                0x20, 0x20, 0x20, 0x20,
+                0x20, 0x20, 0x20, 0x20, // SSID 32 bytes
+
+  // Supported Rates
+  /* 70 - 71 */ 0x01, 0x08, // Tag: Supported Rates, Tag length: 8
+  /* 72 */ 0x82, // 1(B)
+  /* 73 */ 0x84, // 2(B)
+  /* 74 */ 0x8b, // 5.5(B)
+  /* 75 */ 0x96, // 11(B)
+  /* 76 */ 0x24, // 18
+  /* 77 */ 0x30, // 24
+  /* 78 */ 0x48, // 36
+  /* 79 */ 0x6c, // 54
+
+  // Current Channel
+  /* 80 - 81 */ 0x03, 0x01, // Channel set, length
+  /* 82 */      0x01,       // Current Channel
+
+  // RSN information
+  /*  83 -  84 */ 0x30, 0x18,
+  /*  85 -  86 */ 0x01, 0x00,
+  /*  87 -  90 */ 0x00, 0x0f, 0xac, 0x02,
+  /*  91 -  92 */ 0x02, 0x00,
+  /*  93 - 100 */ 0x00, 0x0f, 0xac, 0x04, 0x00, 0x0f, 0xac, 0x04, /*Fix: changed 0x02(TKIP) to 0x04(CCMP) is default. WPA2 with TKIP not supported by many devices*/
+  /* 101 - 102 */ 0x01, 0x00,
+  /* 103 - 106 */ 0x00, 0x0f, 0xac, 0x02,
+  /* 107 - 108 */ 0x00, 0x00
+};
 
 
 void setup(){
-    //setup serial if connected to computer
-    Serial.begin(115200);
-
-    esp_netif_init();
-    esp_netif_create_default_wifi_ap();
-
-    //init wifi block
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-
-    //init wifi config
-    wifi_config_t wifi_config = {
-        .ap = {
-            .ssid = {0},
-            .password = {0},
-            .ssid_len = ssid_length,
-            .channel = 1,
-            .authmode = WIFI_AUTH_WPA2_PSK,
-            .ssid_hidden = 0,
-            .max_connection = 4, 
-            .beacon_interval = 60000
-        }
-    };
-
-    //str copy ssid and password
-    strcpy((char *)wifi_config.ap.ssid, ssid);
-    strcpy((char *)wifi_config.ap.password, password);
+    //**********WIFI SETUP**********//
+    //WiFi init, let the WiFi library handle it
+    WiFi.mode(WIFI_MODE_STA);
     
-
-    rsp = esp_wifi_init(&cfg);
-    if (rsp != ESP_OK){
-        Serial.println("Error initializing wifi");
-        return;
+    //generate empty SSID
+    for(int i = 0; i < 32; i++){
+        emptySSID[i] = ' ';
     }
+    //get packet size
+    packetSize = sizeof(beaconPacket);
 
-    //set wifi mode to AP
-    rsp = esp_wifi_set_mode(WIFI_MODE_AP);
-    if (rsp != ESP_OK){
-        Serial.println("Error setting wifi mode");
-        return;
-    }
-
-    rsp = esp_wifi_set_config(WIFI_IF_AP, &wifi_config);
+    //**********CONFIG SETUP**********//
+    String input;
+    //Serial comms init
+    Serial.begin(115200);
 
     //wait for config input
     while(Serial.available() == 0){
-        delay(100);
+        delay(500);
         Serial.println("Waiting for input");
     }
-    
-    String input = Serial.readString();
-
+    input = Serial.readString();
     //manual parsing
-    i=0;
     while(input.length() > 0){
         //get mac
-        macs[i] = input.substring(0, input.indexOf(";")).c_str();
+        macs[i] = input.substring(0, input.indexOf(";"));
         Serial.println(macs[i]);
         input = input.substring(input.indexOf(";") + 1);
 
@@ -83,100 +108,81 @@ void setup(){
         //increment i
         i++;
     }
-
-    Serial.println("Setup done");
+    int j = 0;
+    while(j < i){
+        Serial.println(macs[j]);
+        j++;
+    }
+    Serial.println("Setup complete");
 }
 
 void loop(){
-    for(int j = 0; j < i; j++){
-        //for mac address macs[j], convert to uint8_t array
-        Serial.print("Setting up mac address idx:");
-        Serial.println(j);
+    for(int j=0; j<i; j++){
+        currentTime = millis();
+        //best effort basis for now
+        nextChannel();
 
-        uint8_t mac[6];
+        //*******packet manipulation*******//
+        //set mac address
         sscanf(macs[j].c_str(), "%02x:%02x:%02x:%02x:%02x:%02x", &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]);
-        
-        rsp = esp_wifi_set_mac(WIFI_IF_AP, mac);
-        if (rsp != ESP_OK){
-            Serial.println("Error setting mac address");
-            return;
-        }
+        memcpy(&beaconPacket[10], mac, 6);
+        memcpy(&beaconPacket[16], mac, 6);
 
-        Serial.println("Setting up tx power");
-        int8_t tx_power;
-        switch(txs[j]){ //set tx power
-            case 0:
-                tx_power = 8;
-                break;
-            case 2:
-                tx_power = 8;
-                break;
-            case 5:
-                tx_power = 20;
-                break;
-            case 7:
-                tx_power = 28;
-                break;
-            case 8:
-                tx_power = 28;
-                break;
-            case 11:
-                tx_power = 44;
-                break;
-            case 13:
-                tx_power = 52;
-                break;
-            case 15:
-                tx_power = 60;
-                break;
-            case 17:
-                tx_power = 66;;
-                break;
-            case 18:
-                tx_power = 72;
-                break;
-            case 19:
-                tx_power = 80;
-                break;
-            case 20:
-                tx_power = 80;
-                break;
-            //default to 80
-            default:
-                tx_power = 84;
-                break;
-        }
-        //start softAP
-        Serial.println("Starting softAP");
-        esp_wifi_start();
-        esp_wifi_set_ps(WIFI_PS_NONE);
+        //reset SSID
+        memcpy(&beaconPacket[38], emptySSID, ssid_len);
 
-        //set tx power
-        ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(tx_power));
-        
-        //spam packets
-        //packet to spam
-        uint8_t pkt[] = { 
-                        0x0d, 0x00, //Frame Control version=0 type=0(management)  subtype=1101 (action) fromDS toDS set to 0
-                        0x00, 0x00, //Duration
-                /*4*/   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //A1 Destination address  broadcast or NaN multicast (51-6f-9a-01-00-00) 
-                /*10*/  mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], //A2 Source address - 
-                /*16*/  mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], //A3 BSSID 
-                /*22*/  0x00, 0x00, //Seq-ctl
-                /*24*/  0x00, 0x00, //Category
-                /*26*/  0x04, 0x00, //Action code
+        //change ssid to macs[j]
+        const char* tmp = macs[j].c_str();
+        memcpy(&beaconPacket[38], tmp, strlen(tmp));
 
-        };
+        //change channel
+        beaconPacket[82] = channel;
 
-        for(int i = 0; i < 4; i++){
-            ESP_ERROR_CHECK(esp_wifi_80211_tx(WIFI_IF_AP, pkt, sizeof(pkt),false));
-            vTaskDelay(200/portTICK_PERIOD_MS);
-        }
+        //set power
+        setPower(txs[j]);
 
-        //stop softAP
-        Serial.println("Stopping softAP");
-        ESP_ERROR_CHECK(esp_wifi_stop());
-        vTaskDelay(200/portTICK_PERIOD_MS);
+        //send beacon
+        ESP_ERROR_CHECK(esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, packetSize, false));
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+        //increment packet count
+        packetCount++;
+        //increment attack time
+        attackTime = millis();
     }
+    Serial.print("Attack complete. Time taken:");
+    Serial.println(attackTime - currentTime);
+    Serial.print("Packets sent: ");
+    Serial.println(packetCount);
 }
 
+void nextChannel(){
+    //increment channel
+    channel++;
+    //check if channel is valid
+    if(channel > 14){
+        channel = 1;
+    }
+    //set channel
+    Serial.print("Setting channel to: ");
+    Serial.print(channel);
+    ESP_ERROR_CHECK(esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE));
+    //vTask delay is 100 enough? idk
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    //read channel back
+    wifi_second_chan_t second; //not used
+    esp_wifi_get_channel(&channel, &second);
+    Serial.print("Channel set to: ")
+    Serial.println(channel);
+}
+
+void setPower(uint8_t tx_power){
+    Serial.print("Setting power to: ");
+    Serial.println(tx_power);
+    ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(tx_power));
+    vTaskDelay(10 / portTICK_PERIOD_MS)
+    //read the power back
+    int8_t power;
+    esp_wifi_get_max_tx_power(&power);
+    Serial.print("Power set to: ");
+    Serial.println(power);
+}
